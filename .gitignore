@@ -1,0 +1,17 @@
+# environments and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# generated synthetic sources (reproduce with `make data`)
+data/generated/
+
+# built warehouse (reproduce with `make build`)
+warehouse/*
+!warehouse/.gitkeep
+
+# local demo state: generated Metabase credentials
+.demo/
