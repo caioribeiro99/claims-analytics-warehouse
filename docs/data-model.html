@@ -1,0 +1,1299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Northstar data model &amp; lineage</title>
+<style>
+/* One token set per theme; every component reads tokens, so both themes resolve as a set. */
+:root {
+  --ground: #F3F5F8; --surface: #FFFFFF; --ink: #15202B; --ink-2: #4E5A68; --rule: #D3DAE2; --rule-2: #E5E9EE;
+  --code-bg: #ECF0F4;
+  --src: #5C6877; --src-bg: #ECEFF2;
+  --stg: #1D5EA6; --stg-bg: #E5EEF8;
+  --dq: #955500; --dq-bg: #FAEEDC;
+  --ref: #13705F; --ref-bg: #DFF1ED;
+  --fct: #4A42AD; --fct-bg: #EAE9F9;
+  --aud: #93346D; --aud-bg: #F6E5EF;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0D1217; --surface: #141B23; --ink: #E2E8EE; --ink-2: #9CA8B5; --rule: #2A3441; --rule-2: #1F2833;
+    --code-bg: #1A222C;
+    --src: #A5AFBC; --src-bg: #1B222B;
+    --stg: #7DB1EC; --stg-bg: #14243A;
+    --dq: #EAAB58; --dq-bg: #2D2213;
+    --ref: #5FC7B4; --ref-bg: #0F2926;
+    --fct: #ABA6F5; --fct-bg: #1F1E3B;
+    --aud: #E291BF; --aud-bg: #2E1A27;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0D1217; --surface: #141B23; --ink: #E2E8EE; --ink-2: #9CA8B5; --rule: #2A3441; --rule-2: #1F2833;
+  --code-bg: #1A222C;
+  --src: #A5AFBC; --src-bg: #1B222B;
+  --stg: #7DB1EC; --stg-bg: #14243A;
+  --dq: #EAAB58; --dq-bg: #2D2213;
+  --ref: #5FC7B4; --ref-bg: #0F2926;
+  --fct: #ABA6F5; --fct-bg: #1F1E3B;
+  --aud: #E291BF; --aud-bg: #2E1A27;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 15px/1.6 var(--sans); padding-inline: 24px; padding-block: 0 64px;
+}
+.wrap { max-width: 1200px; margin-inline: auto; }
+h1, h2, h3, h4 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 34px; font-weight: 680; letter-spacing: -0.02em; }
+h2 { font-size: 24px; font-weight: 660; letter-spacing: -0.01em; }
+h3 { font-size: 17px; font-weight: 640; }
+p { margin: 0; max-width: 72ch; }
+code { font-family: var(--mono); font-size: 0.88em; }
+p code, li code, td code, dd code, figcaption code { background: var(--code-bg); padding: 0.05em 0.35em; border-radius: 4px; }
+/* long identifiers may break anywhere in running text; table cells wrap them at spaces only (stacked tables on phones excepted) */
+p code, li code, dd code, figcaption code { overflow-wrap: anywhere; }
+a { color: var(--stg); text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--stg); outline-offset: 2px; border-radius: 3px; }
+.eyebrow {
+  font: 600 11.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2);
+}
+.muted { color: var(--ink-2); }
+
+/* Masthead */
+.masthead { padding-block: 44px 28px; border-bottom: 1px solid var(--rule); display: grid; gap: 14px; }
+.masthead .summary { font-size: 17px; line-height: 1.55; max-width: 78ch; }
+.synthetic {
+  font-size: 13.5px; color: var(--ink-2); display: flex; gap: 8px; align-items: baseline; max-width: 90ch;
+}
+.synthetic strong { color: var(--ink); font-weight: 620; white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.legend li { display: flex; align-items: center; gap: 7px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid var(--c); background: var(--cbg); flex: none; }
+.toc { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13.5px; margin-top: 2px; }
+.toc a { color: var(--ink-2); text-decoration: none; }
+.toc a:hover { color: var(--ink); text-decoration: underline; }
+
+/* Layer color hooks, shared by the legend, tags and cards */
+.l-src { --c: var(--src); --cbg: var(--src-bg); }
+.l-stg { --c: var(--stg); --cbg: var(--stg-bg); }
+.l-dq  { --c: var(--dq);  --cbg: var(--dq-bg); }
+.l-ref { --c: var(--ref); --cbg: var(--ref-bg); }
+.l-fct { --c: var(--fct); --cbg: var(--fct-bg); }
+.l-aud { --c: var(--aud); --cbg: var(--aud-bg); }
+
+/* Sections */
+section.block { padding-block: 44px 8px; display: grid; gap: 16px; }
+section.block > header { display: grid; gap: 8px; }
+.lede { color: var(--ink-2); font-size: 15.5px; }
+
+/* Diagrams: wide SVGs scroll inside their own frame, never the page */
+figure { margin: 0; display: grid; gap: 10px; }
+.frame { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; overflow-x: auto; }
+.frame svg { display: block; width: 100%; height: auto; min-width: 980px; padding: 14px 16px; }
+figcaption { font-size: 13.5px; color: var(--ink-2); max-width: 96ch; }
+
+svg text { font-family: var(--mono); font-size: 11px; fill: var(--ink); }
+svg .sans { font-family: var(--sans); }
+svg .cap { font-family: var(--sans); font-size: 10.5px; font-weight: 650; letter-spacing: 0.07em; }
+svg .sub { font-size: 9.8px; fill: var(--ink-2); }
+svg .lbl { font-family: var(--sans); font-size: 10.5px; fill: var(--ink-2); }
+svg .strong { font-weight: 700; }
+svg .grp { stroke: none; }
+svg .chip { fill: var(--surface); stroke-width: 1.2; }
+svg .boundary { fill: none; stroke: var(--ink-2); stroke-width: 1.2; stroke-dasharray: 6 5; }
+svg .halo { fill: var(--surface); }
+svg .edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+svg .edge.dq { stroke: var(--dq); }
+svg .edge.asof { stroke: var(--ref); stroke-width: 1.6; stroke-dasharray: 6 4; }
+svg .head { fill: var(--ink-2); }
+svg .head.dq { fill: var(--dq); }
+svg .head.ref { fill: var(--ref); }
+svg .axis { stroke: var(--rule); stroke-width: 1; }
+svg .g-src .grp { fill: var(--src-bg); } svg .g-src .chip { stroke: var(--src); } svg .g-src .cap { fill: var(--src); }
+svg .g-stg .grp { fill: var(--stg-bg); } svg .g-stg .chip { stroke: var(--stg); } svg .g-stg .cap { fill: var(--stg); }
+svg .g-dq  .grp { fill: var(--dq-bg); }  svg .g-dq  .chip { stroke: var(--dq); }  svg .g-dq  .cap { fill: var(--dq); }
+svg .g-ref .grp { fill: var(--ref-bg); } svg .g-ref .chip { stroke: var(--ref); } svg .g-ref .cap { fill: var(--ref); }
+svg .g-fct .grp { fill: var(--fct-bg); } svg .g-fct .chip { stroke: var(--fct); } svg .g-fct .cap { fill: var(--fct); }
+svg .g-aud .grp { fill: var(--aud-bg); } svg .g-aud .chip { stroke: var(--aud); } svg .g-aud .cap { fill: var(--aud); }
+svg .c-dq { fill: var(--dq); } svg .c-ref { fill: var(--ref); } svg .c-fct { fill: var(--fct); }
+svg .edge.soft { stroke-dasharray: 2 3; }
+/* laid under an edge where it crosses another, so the crossing reads as passing over, not as a join */
+svg .gap { fill: none; stroke: var(--surface); stroke-width: 6; }
+svg .pk { font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: 0.06em; fill: var(--ink-2); }
+
+/* Prose, code and tables */
+.small { font-size: 13px; }
+.prose { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.two-col { display: grid; gap: 20px 40px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); margin-top: 8px; }
+pre {
+  margin: 0; padding: 10px 12px; background: var(--code-bg); border-radius: 6px; overflow-x: auto;
+  font: 12.5px/1.5 var(--mono); color: var(--ink);
+}
+pre code { font-size: inherit; background: none; padding: 0; }
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; vertical-align: top; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--rule-2); }
+th { font-size: 12px; font-weight: 620; color: var(--ink-2); border-bottom-color: var(--rule); }
+td:first-child { white-space: nowrap; }
+
+/* Join comparison: two wrong answers, one right one */
+.compare { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.option {
+  display: grid; gap: 10px; align-content: start; padding: 14px 16px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--rule); font-size: 14px; min-width: 0;
+}
+.option.good { border-color: var(--fct); box-shadow: inset 0 0 0 1px var(--fct); }
+.opt-h { font-size: 14.5px; font-weight: 650; }
+.verdict { font: 650 12px/1 var(--sans); letter-spacing: 0.04em; text-transform: uppercase; }
+.option.bad .verdict { color: var(--dq); }
+.option.good .verdict { color: var(--fct); }
+
+/* Table cards */
+.layer { display: grid; gap: 12px; margin-top: 18px; }
+.layer-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.layer-h .note { font-size: 13px; font-weight: 400; color: var(--ink-2); }
+.cards { display: grid; gap: 14px; align-items: start; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.cards.pair { grid-template-columns: repeat(auto-fill, minmax(min(100%, 470px), 1fr)); }
+.card {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 14px 16px 16px; display: grid; gap: 10px; min-width: 0;
+}
+.card.wide { grid-column: 1 / -1; }
+.card > header { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap; }
+.card h4 { font: 650 14px/1.35 var(--mono); overflow-wrap: anywhere; }
+.card h4::before {
+  content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 8px;
+  background: var(--c); vertical-align: 1px;
+}
+.kind {
+  font: 650 10.5px/1 var(--sans); letter-spacing: 0.07em; text-transform: uppercase; white-space: nowrap;
+  color: var(--c); background: var(--cbg); padding: 4px 7px; border-radius: 4px;
+}
+.meta { margin: 0; display: grid; gap: 5px; font-size: 13.5px; line-height: 1.45; }
+.meta > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; }
+.meta dt { color: var(--ink-2); font-size: 12px; padding-top: 1px; }
+.meta dd { margin: 0; }
+.groups { display: grid; gap: 10px; }
+.card.wide .groups { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 14px 32px; }
+.cols + .grp-h { margin-top: 12px; }
+.grp-h { font: 650 10.5px/1.2 var(--sans); letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 4px; }
+.cols { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule-2); }
+.cols li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--rule-2); }
+.cols code { background: none; padding: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.cols span { font: 11px/1.4 var(--mono); color: var(--ink-2); white-space: nowrap; }
+
+/* Semantics */
+.null { color: var(--ink-2); font-style: italic; }
+.trap { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font: 13px/1.2 var(--mono); }
+.trap .cell { padding: 5px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); }
+.trap .cell.null { border-style: dashed; }
+.trap .arrow { color: var(--ink-2); padding-inline: 4px; }
+.trap .result { border-color: var(--dq); color: var(--dq); font-weight: 650; }
+.nest .ring {
+  display: grid; gap: 10px; padding: 10px 12px 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface);
+}
+.nest .ring .ring { background: var(--ground); }
+.nest .ring.inner { background: var(--fct-bg); border-color: var(--fct); }
+.nest p { display: grid; gap: 2px; font-size: 13.5px; line-height: 1.45; }
+.nest p > code { justify-self: start; font-weight: 650; }
+.nest p > span { color: var(--ink-2); }
+
+/* Data quality */
+.contracts { display: grid; gap: 20px 40px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 500px), 1fr)); align-items: start; }
+.contracts td:nth-child(3) code { display: inline-block; margin: 1px 2px 1px 0; }
+.identity code { font-size: 15px; padding: 5px 9px; }
+.inv { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font: 12.5px/1.45 var(--mono); }
+.inv li { position: relative; padding-left: 16px; overflow-wrap: anywhere; }
+.inv li::before { content: ""; position: absolute; left: 2px; top: 0.6em; width: 6px; height: 6px; border-radius: 1px; background: var(--aud); }
+.inv li.inv-h {
+  padding: 10px 0 2px; font: 650 10.5px/1.2 var(--sans); letter-spacing: 0.07em; text-transform: uppercase; color: var(--aud);
+}
+.inv li.inv-h:first-child { padding-top: 0; }
+.inv li.inv-h::before { content: none; }
+
+/* Why this shape */
+.why { display: grid; gap: 24px 40px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); }
+.site-foot { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); }
+
+/* Build order: a real sequence, so it is numbered */
+.steps {
+  list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 10px 20px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+}
+.steps li { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; line-height: 1.45; }
+.steps li > div { display: grid; gap: 1px; min-width: 0; }
+.steps li span:not(.step-n) { color: var(--ink-2); }
+.step-n {
+  flex: none; width: 22px; height: 22px; display: grid; place-items: center; margin-top: 1px;
+  border: 1px solid var(--rule); border-radius: 50%; font: 600 11.5px/1 var(--mono); color: var(--ink-2); background: var(--surface);
+}
+
+@media (max-width: 640px) {
+  body { padding-inline: 16px; font-size: 14.5px; }
+  h1 { font-size: 27px; }
+  h2 { font-size: 21px; }
+  .masthead { padding-block: 28px 20px; }
+  .masthead .summary { font-size: 16px; }
+  .synthetic { display: block; }
+  section.block { padding-block: 32px 4px; }
+  .frame svg { padding: 10px; }
+  .meta > div { grid-template-columns: 1fr; gap: 0; }
+  /* In a wide table the explanation lands past a phone's edge, where no scrollbar hints at it. Stacked tables
+     give each row's first cell its own line and set the remaining cells side by side beneath it. */
+  table.stack, table.stack thead, table.stack tbody { display: block; }
+  table.stack tr {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 12px;
+    padding-block: 7px; border-bottom: 1px solid var(--rule-2);
+  }
+  table.stack thead tr { border-bottom-color: var(--rule); }
+  table.stack th, table.stack td { padding: 0; border: 0; }
+  table.stack tr > :first-child { grid-column: 1 / -1; white-space: normal; }
+  table.stack.vocab tr { grid-template-columns: minmax(0, 1fr); }
+  /* a short middle column leaves room for the long codes in the last one */
+  table.stack.slim-second tr { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+  table.stack code { overflow-wrap: anywhere; }
+}
+
+@media print {
+  /* paper is always light, whatever the screen theme */
+  :root:not([data-theme="light"]), :root[data-theme] {
+    --ground: #FFFFFF; --surface: #FFFFFF; --ink: #000000; --ink-2: #3F4854; --rule: #B9C1CB; --rule-2: #D9DEE4;
+    --code-bg: #EEF1F4;
+    --src: #5C6877; --src-bg: #ECEFF2; --stg: #1D5EA6; --stg-bg: #E5EEF8; --dq: #955500; --dq-bg: #FAEEDC;
+    --ref: #13705F; --ref-bg: #DFF1ED; --fct: #4A42AD; --fct-bg: #EAE9F9; --aud: #93346D; --aud-bg: #F6E5EF;
+  }
+  body { padding: 0; font-size: 10.5pt; }
+  .toc { display: none; }
+  .frame { overflow: visible; }
+  .frame svg { min-width: 0; padding: 6px; }
+  figure, .card, .option, tr, .nest, .why > div { break-inside: avoid; }
+  section.block > header { break-after: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">claims-analytics-warehouse · docs</p>
+  <h1>Northstar Claims Analytics — Data model &amp; lineage</h1>
+  <p class="summary">Referral partners send price lookups, some lookups become claims submitted by providers, and some claims are
+    reversed later. This page shows how those events become three fact tables in a single DuckDB file: validated on arrival,
+    quarantined instead of repaired, costed as of the moment each claim was submitted, and published only when every build
+    invariant holds.</p>
+  <p class="synthetic"><strong>All data is synthetic.</strong> <span>Northstar, its partners, providers, products and prices are
+    fictional and generated deterministically by <code>claims_warehouse/synthetic.py</code> from a fixed seed.</span></p>
+  <ul class="legend" aria-label="Color legend">
+    <li class="l-src"><span class="sw" aria-hidden="true"></span>Source file</li>
+    <li class="l-stg"><span class="sw" aria-hidden="true"></span>Staging</li>
+    <li class="l-dq"><span class="sw" aria-hidden="true"></span>Data quality &amp; quarantine</li>
+    <li class="l-ref"><span class="sw" aria-hidden="true"></span>Reference / dimension</li>
+    <li class="l-fct"><span class="sw" aria-hidden="true"></span>Fact</li>
+    <li class="l-aud"><span class="sw" aria-hidden="true"></span>Audit &amp; build</li>
+  </ul>
+  <nav class="toc" aria-label="Sections">
+    <a href="#lineage">Pipeline &amp; lineage</a>
+    <a href="#relationships">Relationships</a>
+    <a href="#as-of">As-of pricing</a>
+    <a href="#tables">Tables</a>
+    <a href="#semantics">Semantics</a>
+    <a href="#quality">Data quality</a>
+    <a href="#shape">Why this shape</a>
+  </nav>
+</header>
+
+<main>
+<section class="block" id="lineage" aria-labelledby="lineage-h">
+  <header>
+    <h2 id="lineage-h">Pipeline &amp; lineage</h2>
+    <p class="lede">A full reload on every build. Events are checked record by record in Python, every record lands in raw
+      staging exactly once, and the SQL model in <code>sql/</code> runs in file-name order inside a new database file that
+      replaces the published one only after all checks pass.</p>
+  </header>
+
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 1310 668" role="img" aria-labelledby="lin-title lin-desc">
+        <title id="lin-title">Table-level lineage from synthetic source files to the published warehouse</title>
+        <desc id="lin-desc">Lookup, claim and reversal JSON files pass through validate.py into staging.lookups_raw, staging.claims_raw and
+          staging.reversals_raw. Contract-valid rows form staging.lookups, staging.claims and staging.reversals, which feed
+          fct_lookups, fct_claims and fct_reversals. Records with any reason go to rejects. Claim ids whose valid copies disagree go to staging.ambiguous_claim_ids and later identical copies go to
+          staging.redelivered_claims; both feed rejects and stay out of fct_claims. Provider and product CSVs become
+          dim_provider and dim_product, partner terms pass through staging.partners into dim_partner; weekly cost publications become
+          staging.cost_publications and then ref_product_costs. fct_claims inner-joins dim_provider as the scope gate,
+          left-joins dim_partner for payout terms and joins ref_product_costs as of submission time. Facts and rejects feed the
+          audit views. Not drawn: audit_reconciliation also counts the raw staging tables, and the lookup and reversal statuses
+          also read staging.claims_raw, staging.claims, staging.ambiguous_claim_ids and dim_provider. The whole building file is
+          checked by the build invariants: if all pass it is atomically renamed to claims_warehouse.duckdb, otherwise it is
+          deleted.</desc>
+        <defs>
+          <marker id="lin-ah" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path class="head" d="M0,0.5 L8,4 L0,7.5 z"/></marker>
+          <marker id="lin-ah-dq" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path class="head dq" d="M0,0.5 L8,4 L0,7.5 z"/></marker>
+          <marker id="lin-ah-ref" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head ref" d="M0,0.5 L8,4 L0,7.5 z"/></marker>
+        </defs>
+
+        <!-- the database file being built -->
+        <rect class="boundary" x="364" y="26" width="738" height="634" rx="10"/>
+        <rect class="halo" x="376" y="18" width="330" height="17"/>
+        <text x="384" y="31" class="sans" style="font-size:11px;font-weight:600">DuckDB file being built: .claims_warehouse.duckdb.building</text>
+
+        <!-- sources -->
+        <g class="g-src">
+          <rect class="grp" x="0" y="40" width="196" height="374" rx="8"/>
+          <text class="cap" x="12" y="58">SYNTHETIC SOURCES</text>
+          <text class="sub" x="12" y="72">data/generated/</text>
+          <rect class="chip" x="10" y="81" width="176" height="22" rx="4"/><text x="20" y="96">providers/providers.csv</text>
+          <rect class="chip" x="10" y="109" width="176" height="22" rx="4"/><text x="20" y="124">partners/partners.csv</text>
+          <rect class="chip" x="10" y="137" width="176" height="22" rx="4"/><text x="20" y="152">products/products.csv</text>
+          <rect class="chip" x="10" y="167" width="176" height="34" rx="4"/><text x="18" y="181" style="font-size:10px">reference_costs/</text><text x="18" y="195" style="font-size:10px">publication-YYYY-MM-DD.csv</text>
+          <rect class="chip" x="10" y="254" width="176" height="36" rx="4"/><text x="18" y="269" style="font-size:10px">lookups/</text><text x="18" y="283" style="font-size:10px">lookups-YYYY-MM-{a,b}.json</text>
+          <rect class="chip" x="10" y="310" width="176" height="36" rx="4"/><text x="18" y="325" style="font-size:10px">claims/</text><text x="18" y="339" style="font-size:10px">claims-YYYY-MM.json</text>
+          <rect class="chip" x="10" y="366" width="176" height="36" rx="4"/><text x="18" y="381" style="font-size:10px">reversals/</text><text x="18" y="395" style="font-size:10px">reversals-YYYY-MM.json</text>
+        </g>
+
+        <!-- python validation -->
+        <g class="g-dq">
+          <rect class="grp" x="220" y="222" width="128" height="192" rx="8"/>
+          <text class="cap" x="230" y="240">VALIDATE</text>
+          <text class="strong" x="230" y="256">validate.py</text>
+          <text x="230" y="276" style="font-size:10px">validate_lookup</text>
+          <text x="230" y="332" style="font-size:10px">validate_claim</text>
+          <text x="230" y="388" style="font-size:10px">validate_reversal</text>
+          <text class="sub" x="230" y="296">typed row + reasons</text>
+        </g>
+
+        <!-- raw typed staging -->
+        <g class="g-stg">
+          <rect class="grp" x="384" y="222" width="190" height="212" rx="8"/>
+          <text class="cap" x="396" y="240">RAW TYPED STAGING</text>
+          <rect class="chip" x="394" y="258" width="170" height="28" rx="4"/><text x="404" y="276">staging.lookups_raw</text>
+          <rect class="chip" x="394" y="314" width="170" height="28" rx="4"/><text x="404" y="332">staging.claims_raw</text>
+          <rect class="chip" x="394" y="370" width="170" height="28" rx="4"/><text x="404" y="388">staging.reversals_raw</text>
+          <text class="sub" x="396" y="414">schema_reasons · raw payload</text>
+          <text class="sub" x="396" y="426">source_file · source_row</text>
+          <rect class="chip" x="394" y="109" width="170" height="22" rx="4"/><text x="404" y="124">staging.partners</text>
+          <rect class="chip" x="394" y="170" width="170" height="28" rx="4"/><text x="402" y="188" style="font-size:10px">staging.cost_publications</text>
+        </g>
+
+        <!-- reference -->
+        <g class="g-ref">
+          <rect class="grp" x="606" y="40" width="200" height="170" rx="8"/>
+          <text class="cap" x="618" y="58">REFERENCE</text>
+          <rect class="chip" x="616" y="81" width="180" height="22" rx="4"/><text x="626" y="96">dim_provider</text>
+          <rect class="chip" x="616" y="109" width="180" height="22" rx="4"/><text x="626" y="124">dim_partner</text>
+          <rect class="chip" x="616" y="137" width="180" height="22" rx="4"/><text x="626" y="152">dim_product</text>
+          <rect class="chip" x="616" y="170" width="180" height="28" rx="4"/><text x="626" y="188">ref_product_costs</text>
+        </g>
+
+        <!-- contract-valid subsets -->
+        <g class="g-stg">
+          <rect class="grp" x="606" y="222" width="200" height="212" rx="8"/>
+          <text class="cap" x="618" y="240">CONTRACT-VALID SUBSETS</text>
+          <rect class="chip" x="616" y="258" width="180" height="28" rx="4"/><text x="626" y="276">staging.lookups</text>
+          <rect class="chip" x="616" y="314" width="180" height="28" rx="4"/><text x="626" y="332">staging.claims</text>
+          <rect class="chip" x="616" y="370" width="180" height="28" rx="4"/><text x="626" y="388">staging.reversals</text>
+          <text class="sub" x="618" y="421">WHERE len(schema_reasons) = 0</text>
+        </g>
+
+        <!-- claim identity and quarantine -->
+        <g class="g-dq">
+          <rect class="grp" x="606" y="452" width="200" height="86" rx="8"/>
+          <text class="cap" x="618" y="469">CLAIM IDENTITY</text>
+          <rect class="chip" x="616" y="477" width="180" height="22" rx="4"/><text x="623" y="492" style="font-size:10px">staging.ambiguous_claim_ids</text>
+          <rect class="chip" x="616" y="506" width="180" height="22" rx="4"/><text x="623" y="521" style="font-size:10px">staging.redelivered_claims</text>
+          <rect class="chip" x="616" y="558" width="180" height="50" rx="4"/>
+          <text class="strong" x="626" y="575">rejects</text>
+          <text class="sub" x="626" y="589">every reason · source_file</text>
+          <text class="sub" x="626" y="601">source_row · raw payload</text>
+        </g>
+
+        <!-- facts -->
+        <g class="g-fct">
+          <rect class="grp" x="870" y="222" width="182" height="212" rx="8"/>
+          <text class="cap" x="882" y="240">FACTS</text>
+          <rect class="chip" x="880" y="258" width="162" height="28" rx="4"/><text x="890" y="276">fct_lookups</text>
+          <rect class="chip" x="880" y="302" width="162" height="52" rx="4"/><text class="strong" x="890" y="321">fct_claims</text><text class="sub" x="890" y="337">one per in-scope claim</text>
+          <rect class="chip" x="880" y="370" width="162" height="28" rx="4"/><text x="890" y="388">fct_reversals</text>
+          <text class="sub" x="882" y="421" style="font-size:9.5px">claim_id → resolution_status</text>
+        </g>
+
+        <!-- audit -->
+        <g class="g-aud">
+          <rect class="grp" x="870" y="560" width="182" height="88" rx="8"/>
+          <text class="cap" x="882" y="578">AUDIT VIEWS</text>
+          <rect class="chip" x="880" y="588" width="162" height="22" rx="4"/><text x="890" y="603">audit_reconciliation</text>
+          <rect class="chip" x="880" y="616" width="162" height="22" rx="4"/><text x="890" y="631">audit_reject_reasons</text>
+        </g>
+
+        <!-- gate and publish -->
+        <g class="g-aud">
+          <rect class="grp" x="1130" y="96" width="176" height="118" rx="8"/>
+          <text class="cap" x="1142" y="114">ATOMIC PUBLISH</text>
+          <text x="1142" y="134" style="font-size:10px">os.replace(building, db)</text>
+          <text class="sub" x="1142" y="156">warehouse/</text>
+          <text class="strong" x="1142" y="170">claims_warehouse.duckdb</text>
+          <text class="lbl" x="1142" y="190">readers never see a</text>
+          <text class="lbl" x="1142" y="204">half-built warehouse</text>
+          <rect class="grp" x="1130" y="262" width="176" height="112" rx="8"/>
+          <text class="cap" x="1142" y="280">BUILD INVARIANTS</text>
+          <text class="strong" x="1142" y="298">checks.py</text>
+          <text class="lbl" x="1142" y="318">17 queries count offending</text>
+          <text class="lbl" x="1142" y="332">rows: keys, grain,</text>
+          <text class="lbl" x="1142" y="346">reconciliation, reference</text>
+          <text class="lbl" x="1142" y="360">contracts</text>
+        </g>
+        <g class="g-dq">
+          <rect class="grp" x="1130" y="424" width="176" height="84" rx="8"/>
+          <text class="cap" x="1142" y="442">ANY CHECK FAILS</text>
+          <text x="1142" y="460">BuildError</text>
+          <text class="lbl" x="1142" y="478">building file deleted, the</text>
+          <text class="lbl" x="1142" y="492">previous warehouse is kept</text>
+        </g>
+
+        <!-- reference edges -->
+        <path class="edge" d="M186,92 H616" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M186,120 H394" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M564,120 H616" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M186,148 H616" marker-end="url(#lin-ah)"/>
+        <text class="lbl" x="206" y="52">read_csv in SQL, no Python</text>
+        <text class="lbl" x="206" y="65">step: reference contracts</text>
+        <text class="lbl" x="206" y="78">are build invariants</text>
+        <path class="edge" d="M186,184 H394" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M564,184 H616" marker-end="url(#lin-ah)"/>
+        <text class="lbl" x="214" y="177">weekly, restating</text>
+        <!-- the three fct_claims joins take lanes right of FACTS; the edge that starts highest takes the outermost lane,
+             so none of them crosses another -->
+        <path class="edge" d="M796,92 H1082 V334 H1042" marker-end="url(#lin-ah)"/>
+        <text class="lbl" x="818" y="85">inner join: scope gate → fct_claims</text>
+        <path class="edge" d="M796,120 H1072 V322 H1042" marker-end="url(#lin-ah)"/>
+        <text class="lbl" x="818" y="113">left join: payout terms → fct_claims</text>
+        <path class="edge asof" d="M796,184 H1062 V310 H1042" marker-end="url(#lin-ah-ref)"/>
+        <text class="lbl" x="818" y="177" style="fill:var(--ref);font-weight:600">ASOF join → fct_claims</text>
+
+        <!-- event edges -->
+        <path class="edge" d="M186,272 H220" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M186,328 H220" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M186,384 H220" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M348,272 H394" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M348,328 H394" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M348,384 H394" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M564,272 H616" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M564,328 H616" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M564,384 H616" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M796,272 H880" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M796,328 H880" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M796,384 H880" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M836,272 V314 H880" marker-end="url(#lin-ah)"/>
+        <circle class="head" cx="836" cy="272" r="2.6"/>
+        <text class="lbl" x="830" y="298" text-anchor="end">attribution</text>
+        <path class="edge" d="M836,384 V342 H880" marker-end="url(#lin-ah)"/>
+        <circle class="head" cx="836" cy="384" r="2.6"/>
+        <text class="lbl" x="830" y="361" text-anchor="end">is_reversed</text>
+        <path class="edge" d="M961,302 V286" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M961,354 V370" marker-end="url(#lin-ah)"/>
+
+        <!-- quarantine edges -->
+        <path class="edge dq" d="M479,434 V583 H616" marker-end="url(#lin-ah-dq)"/>
+        <text class="lbl" x="489" y="574" style="fill:var(--dq)">any reason</text>
+        <path class="edge dq" d="M790,434 V452" marker-end="url(#lin-ah-dq)"/>
+        <path class="edge dq" d="M706,538 V558" marker-end="url(#lin-ah-dq)"/>
+        <text class="lbl" x="714" y="552" style="fill:var(--dq)">ambiguous_duplicate_id · duplicate_redelivery</text>
+        <text class="lbl" x="818" y="488" style="fill:var(--dq)">excluded from fct_claims</text>
+
+        <!-- audit and gate edges -->
+        <path class="edge" d="M796,583 H870" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M1030,434 V560" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M1102,318 H1130" marker-end="url(#lin-ah)"/>
+        <path class="edge" d="M1218,262 V214" marker-end="url(#lin-ah)"/>
+        <text class="lbl" x="1210" y="243" text-anchor="end">all pass</text>
+        <path class="edge dq" d="M1218,374 V424" marker-end="url(#lin-ah-dq)"/>
+        <text class="lbl" x="1210" y="403" text-anchor="end" style="fill:var(--dq)">any offending row</text>
+
+        <!-- claim identity is an anti-join into fct_claims; it has to cross the facts-to-audit edge to get there -->
+        <path class="gap" d="M1022,495 H1038"/>
+        <path class="edge dq" d="M806,495 H1092 V346 H1042" marker-end="url(#lin-ah-dq)"/>
+      </svg>
+    </div>
+    <figcaption>Solid arrows are table-level lineage; the dashed teal arrow is the as-of join, not an equality join. Reference
+      CSVs skip the Python step on purpose: a broken reference row fails the whole build instead of being quarantined, because a
+      wrong partner term would misprice every claim it touches. Partner terms and unit costs stay text in staging, so the gate
+      checks the exact delivered value rather than the <code>TRY_CAST</code> result, which rounds 150.7 cents to 151 and turns
+      unparseable text into NULL; nothing is published unless those checks pass. Left out to keep the picture readable:
+      <code>dim_provider</code> also adds <code>out_of_network</code> to <code>rejects</code>; the statuses in
+      <code>fct_lookups</code> and <code>fct_reversals</code> also consult <code>staging.claims_raw</code>,
+      <code>staging.claims</code>, <code>staging.ambiguous_claim_ids</code> and <code>dim_provider</code>; and
+      <code>audit_reconciliation</code> also counts the three raw staging tables.</figcaption>
+  </figure>
+
+  <ol class="steps" aria-label="Build order">
+    <li><span class="step-n">1</span><div><strong>Load events</strong><span><code>00_staging_schema.sql</code>, then Python parses each file exactly and validates every record</span></div></li>
+    <li><span class="step-n">2</span><div><strong>Reference</strong><span><code>10_reference.sql</code></span></div></li>
+    <li><span class="step-n">3</span><div><strong>Valid subsets &amp; claim identity</strong><span><code>20_staging_valid.sql</code></span></div></li>
+    <li><span class="step-n">4</span><div><strong>Quarantine</strong><span><code>30_rejects.sql</code></span></div></li>
+    <li><span class="step-n">5</span><div><strong>Cost history</strong><span><code>40_reference_costs.sql</code></span></div></li>
+    <li><span class="step-n">6</span><div><strong>Facts</strong><span><code>50_fct_claims.sql</code> → <code>60_fct_lookups.sql</code> → <code>70_fct_reversals.sql</code></span></div></li>
+    <li><span class="step-n">7</span><div><strong>Audit</strong><span><code>80_audit.sql</code>, then <code>build_info</code></span></div></li>
+    <li><span class="step-n">8</span><div><strong>Gate &amp; swap</strong><span><code>checks.assert_invariants</code>, <code>CHECKPOINT</code>, <code>os.replace</code></span></div></li>
+  </ol>
+</section>
+
+<section class="block" id="relationships" aria-labelledby="rel-h">
+  <header>
+    <h2 id="rel-h">Relationships around <code>fct_claims</code></h2>
+    <p class="lede">Three fact tables at three grains, joined through <code>claim_id</code>. Only the edges that the build
+      actually joins on are solid; the dotted edge is available for analysis but never used to filter or price.</p>
+  </header>
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 1120 540" role="img" aria-labelledby="rel-title rel-desc">
+        <title id="rel-title">Keys and cardinalities around fct_claims</title>
+        <desc id="rel-desc">fct_lookups.claim_id references fct_claims.claim_id: at most one valid lookup per in-scope claim, asserted
+          by the build. fct_reversals.claim_id references fct_claims.claim_id: many reversal events, one reversal effect.
+          fct_claims.provider_id references exactly one dim_provider row, an inner join that acts as the scope gate.
+          fct_claims.partner_code, taken from the lookup, references zero or one dim_partner row. fct_claims.product_code
+          matches zero or one dim_product row but the build never joins it. ref_product_costs is attached with an as-of join on
+          product_code and effective_date at or before submitted_at, which is not an equality join. Not drawn: fct_lookups.partner_code
+          and fct_lookups.product_code each match zero or one dim_partner or dim_product row, and neither is enforced.</desc>
+        <defs>
+          <marker id="rel-ah" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path class="head" d="M0,0.5 L8,4 L0,7.5 z"/></marker>
+          <marker id="rel-ah-ref" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head ref" d="M0,0.5 L8,4 L0,7.5 z"/></marker>
+        </defs>
+
+        <!-- fct_claims -->
+        <g class="g-fct">
+          <rect class="grp" x="420" y="130" width="280" height="252" rx="8"/>
+          <text class="cap" x="436" y="150">FACT · ONE ROW PER IN-SCOPE CLAIM</text>
+          <text class="strong" x="436" y="172" style="font-size:13px">fct_claims</text>
+          <line class="axis" x1="436" y1="181" x2="684" y2="181"/>
+          <text x="436" y="198">claim_id</text><text class="pk" x="684" y="198" text-anchor="end">PK</text>
+          <text x="436" y="222">provider_id</text>
+          <text x="436" y="246">partner_code</text><text class="sub" x="684" y="246" text-anchor="end">from the lookup</text>
+          <text x="436" y="270">product_code</text>
+          <text x="436" y="294">submitted_at</text>
+          <text class="sub" x="436" y="318">lookup_id · attribution_status</text>
+          <text class="sub" x="436" y="338">is_reversed · reversed_at</text>
+          <text class="sub" x="436" y="358">reference_effective_date</text>
+          <text class="sub" x="436" y="372">reference_cost_status</text>
+        </g>
+
+        <!-- facts on the left -->
+        <g class="g-fct">
+          <rect class="grp" x="20" y="60" width="250" height="112" rx="8"/>
+          <text class="cap" x="34" y="78">FACT · ONE ROW PER VALID LOOKUP</text>
+          <text class="strong" x="34" y="98">fct_lookups</text>
+          <text x="34" y="118">lookup_id</text><text class="pk" x="256" y="118" text-anchor="end">PK</text>
+          <text x="34" y="138">claim_id</text><text class="sub" x="256" y="138" text-anchor="end">nullable</text>
+          <text class="sub" x="34" y="158">in_scope_conversion · resolution_status</text>
+
+          <rect class="grp" x="20" y="300" width="250" height="132" rx="8"/>
+          <text class="cap" x="34" y="318">FACT · ONE ROW PER VALID REVERSAL</text>
+          <text class="strong" x="34" y="338">fct_reversals</text>
+          <text x="34" y="358">reversal_sk</text><text class="pk" x="256" y="358" text-anchor="end">PK</text>
+          <text class="sub" x="34" y="372">surrogate: reversal_id is not unique</text>
+          <text x="34" y="392">claim_id</text>
+          <text class="sub" x="34" y="410">resolution_status</text>
+          <text class="sub" x="34" y="422">source_file · source_row</text>
+        </g>
+        <text class="lbl" x="20" y="194">At most one valid lookup per in-scope claim,</text>
+        <text class="lbl" x="20" y="208">asserted by the build, so attribution cannot fan out.</text>
+        <text class="lbl" x="20" y="452">Many reversal events, one reversal effect:</text>
+        <text class="lbl" x="20" y="466">is_reversed once, reversed_at = min(reversed_at).</text>
+
+        <!-- reference on the right -->
+        <g class="g-ref">
+          <rect class="grp" x="860" y="40" width="240" height="84" rx="8"/>
+          <text class="cap" x="874" y="58">DIMENSION</text>
+          <text class="strong" x="874" y="78">dim_provider</text>
+          <text x="874" y="98">provider_id</text><text class="pk" x="1086" y="98" text-anchor="end">PK</text>
+          <text class="sub" x="874" y="114">network · region</text>
+
+          <rect class="grp" x="860" y="176" width="240" height="84" rx="8"/>
+          <text class="cap" x="874" y="194">DIMENSION</text>
+          <text class="strong" x="874" y="214">dim_partner</text>
+          <text x="874" y="234">partner_code</text><text class="pk" x="1086" y="234" text-anchor="end">PK</text>
+          <text class="sub" x="874" y="250">payout_model · one payout term</text>
+
+          <rect class="grp" x="860" y="316" width="240" height="84" rx="8"/>
+          <text class="cap" x="874" y="334">DIMENSION</text>
+          <text class="strong" x="874" y="354">dim_product</text>
+          <text x="874" y="374">product_code</text><text class="pk" x="1086" y="374" text-anchor="end">PK</text>
+          <text class="sub" x="874" y="390">product_name · category</text>
+
+          <rect class="grp" x="420" y="446" width="280" height="84" rx="8"/>
+          <text class="cap" x="436" y="464">REFERENCE · EFFECTIVE-DATED</text>
+          <text class="strong" x="436" y="484">ref_product_costs</text>
+          <text x="436" y="504">product_code, effective_date</text><text class="pk" x="684" y="504" text-anchor="end">PK</text>
+          <text class="sub" x="436" y="520">next_effective_date · unit_cost</text>
+        </g>
+        <text class="lbl" x="860" y="142">Inner join: the scope gate. network and</text>
+        <text class="lbl" x="860" y="156">region are copied onto the claim.</text>
+        <text class="lbl" x="860" y="278">No lookup, or a partner without terms:</text>
+        <text class="lbl" x="860" y="292">partner_payout stays NULL.</text>
+        <text class="lbl" x="860" y="418">Catalog labels for analysis only; the</text>
+        <text class="lbl" x="860" y="432">build never joins or filters on it.</text>
+
+        <!-- edges -->
+        <path class="edge" d="M270,134 H360 V192 H420" marker-end="url(#rel-ah)"/>
+        <text class="lbl" x="278" y="127">0..1</text>
+        <text class="lbl" x="412" y="185" text-anchor="end">0..1</text>
+
+        <path class="edge" d="M270,388 H340 V204 H420" marker-end="url(#rel-ah)"/>
+        <text class="lbl" x="278" y="381">0..*</text>
+        <text class="lbl" x="412" y="219" text-anchor="end">0..1</text>
+
+        <path class="edge" d="M700,218 H780 V94 H860" marker-end="url(#rel-ah)"/>
+        <text class="lbl" x="708" y="211">0..*</text>
+        <text class="lbl" x="852" y="87" text-anchor="end">1</text>
+
+        <path class="edge" d="M700,242 H800 V230 H860" marker-end="url(#rel-ah)"/>
+        <text class="lbl" x="708" y="235">0..*</text>
+        <text class="lbl" x="852" y="223" text-anchor="end">0..1</text>
+        <text class="lbl" x="708" y="259">0..*</text>
+
+        <path class="edge soft" d="M700,266 H820 V370 H860" marker-end="url(#rel-ah)"/>
+        <text class="lbl" x="852" y="363" text-anchor="end">0..1</text>
+
+        <path class="edge asof" d="M560,382 V446" marker-end="url(#rel-ah-ref)"/>
+        <text class="lbl" x="552" y="402" text-anchor="end">0..*</text>
+        <text class="lbl" x="552" y="440" text-anchor="end">0..1</text>
+        <text class="lbl" x="572" y="401" style="fill:var(--ref);font-weight:700">ASOF · not an equality join</text>
+        <text class="lbl" x="572" y="415">same product_code AND</text>
+        <text class="lbl" x="572" y="429">effective_date &lt;= submitted_at, latest wins</text>
+      </svg>
+    </div>
+    <figcaption>Numbers at each end say how many rows of that table relate to one row at the other end. A lookup's
+      <code>claim_id</code> can be NULL or point at a claim that never became in scope, which is why that end is 0..1 and why
+      <code>fct_lookups</code> keeps the row with a <code>resolution_status</code> instead of dropping it. The same holds for
+      reversals: only <code>'applied'</code> reversals change claim economics. <code>fct_lookups</code> also carries its own
+      <code>partner_code</code> and <code>product_code</code>; they are labels, not enforced keys. Each matches zero or one
+      <code>dim_partner</code> or <code>dim_product</code> row (0..* to 0..1), and lookups whose code has no dimension row
+      are kept, so join them with a LEFT JOIN.</figcaption>
+  </figure>
+</section>
+
+<section class="block" id="as-of" aria-labelledby="asof-h">
+  <header>
+    <h2 id="asof-h">As-of pricing</h2>
+    <p class="lede">Reference unit costs change over time and arrive as weekly publications that restate the whole price list.
+      A claim is costed with the price that was in effect when it was submitted: the latest <code>effective_date</code>
+      at or before <code>submitted_at</code>.</p>
+  </header>
+
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 1100 290" role="img" aria-labelledby="asof-title asof-desc">
+        <title id="asof-title">Which change-point an as-of join picks for one claim</title>
+        <desc id="asof-desc">Product PRD-1018 has three change-points: 70.37000 effective 2024-11-30, 63.33300 effective 2025-02-04 and
+          60.16635 effective 2025-05-16. A claim submitted on 2025-04-07 at 16:11:39 picks 63.33300, the latest change-point
+          already in effect. The newest price, 60.16635, only took effect later, so using it would leak the future. The
+          2025-05-16 change-point was first published as 65.58132 and restated as 60.16635 from the 2025-06-09 publication; the
+          latest published_date wins.</desc>
+        <defs>
+          <marker id="asof-ah" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head" d="M0,0.5 L8,4 L0,7.5 z"/></marker>
+          <marker id="asof-ah-fct" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="c-fct" d="M0,0.5 L8,4 L0,7.5 z"/></marker>
+          <marker id="asof-ah-dq" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="c-dq" d="M0,0.5 L8,4 L0,7.5 z"/></marker>
+        </defs>
+
+        <text x="0" y="14" style="font-weight:650;fill:var(--ink-2)">ref_product_costs WHERE product_code = 'PRD-1018'</text>
+
+        <!-- validity intervals [effective_date, next_effective_date) -->
+        <g class="g-ref">
+          <rect x="80" y="30" width="85" height="22" rx="3" style="fill:var(--ground);stroke:var(--rule);stroke-dasharray:3 3"/>
+          <text class="sub" x="122" y="45" text-anchor="middle" style="font-family:var(--sans)">no price yet</text>
+          <rect class="chip" x="165" y="30" width="193.7" height="22" rx="3"/>
+          <text x="261.8" y="45" text-anchor="middle" style="font-size:10px">[2024-11-30, 2025-02-04)</text>
+          <rect x="358.7" y="30" width="296.4" height="22" rx="3" style="fill:var(--fct-bg);stroke:var(--fct);stroke-width:1.6"/>
+          <text x="507" y="45" text-anchor="middle" style="font-size:10px">[2025-02-04, 2025-05-16)</text>
+          <rect class="chip" x="655.1" y="30" width="404.9" height="22" rx="3"/>
+          <text x="857.5" y="45" text-anchor="middle" style="font-size:10px">[2025-05-16, NULL) still current</text>
+        </g>
+        <text class="lbl" x="76" y="45" text-anchor="end">interval</text>
+
+        <!-- price steps -->
+        <text class="lbl" x="76" y="126" text-anchor="end">unit_cost</text>
+        <polyline points="165,84 358.7,84 358.7,144.3 655.1,144.3 655.1,171.4 1060,171.4" style="fill:none;stroke:var(--ref);stroke-width:2"/>
+        <circle cx="165" cy="84" r="4.5" class="c-ref"/>
+        <circle cx="358.7" cy="144.3" r="4.5" class="c-ref"/>
+        <circle cx="358.7" cy="144.3" r="9" style="fill:none;stroke:var(--fct);stroke-width:2"/>
+        <circle cx="655.1" cy="171.4" r="4.5" class="c-ref"/>
+        <text x="174" y="76" style="font-size:10.5px">70.37000</text>
+        <text x="368" y="136" style="font-size:10.5px">63.33300</text>
+        <text x="664" y="190" style="font-size:10.5px">60.16635</text>
+
+        <!-- restatement -->
+        <circle cx="655.1" cy="125" r="4.5" style="fill:var(--surface);stroke:var(--ref);stroke-width:1.5"/>
+        <line x1="655.1" y1="130" x2="655.1" y2="166" style="stroke:var(--ref);stroke-width:1;stroke-dasharray:2 2"/>
+        <text x="664" y="129" style="font-size:10.5px;fill:var(--ink-2);text-decoration:line-through">65.58132</text>
+        <text class="lbl" x="736" y="121">published 2025-05-26 and 2025-06-02, restated from 2025-06-09:</text>
+        <text class="lbl" x="736" y="135">the latest published_date wins, was_restated = true</text>
+
+        <!-- the claim -->
+        <line x1="542.6" y1="62" x2="542.6" y2="232" style="stroke:var(--fct);stroke-width:1.6"/>
+        <text x="534" y="74" text-anchor="end" class="sans" style="font-size:10.5px;font-weight:650;fill:var(--fct)">claim · submitted_at 2025-04-07 16:11:39</text>
+        <path d="M536,160 H372" style="fill:none;stroke:var(--fct);stroke-width:1.6" marker-end="url(#asof-ah-fct)"/>
+        <text class="lbl" x="530" y="176" text-anchor="end" style="fill:var(--fct);font-weight:650">as-of pick: 63.33300</text>
+        <text class="lbl" x="530" y="190" text-anchor="end">latest effective_date &lt;= submitted_at</text>
+        <path d="M549,210 C600,210 630,196 648,180" style="fill:none;stroke:var(--dq);stroke-width:1.4;stroke-dasharray:5 3" marker-end="url(#asof-ah-dq)"/>
+        <text class="lbl" x="560" y="226" style="fill:var(--dq);font-weight:650">newest price: took effect after the claim</text>
+
+        <!-- time axis -->
+        <line class="axis" x1="80" y1="244" x2="1060" y2="244"/>
+        <g>
+          <line class="axis" x1="80" y1="244" x2="80" y2="249"/><text class="lbl" x="80" y="262" text-anchor="middle">Nov 2024</text>
+          <line class="axis" x1="168" y1="244" x2="168" y2="249"/><text class="lbl" x="168" y="262" text-anchor="middle">Dec</text>
+          <line class="axis" x1="259" y1="244" x2="259" y2="249"/><text class="lbl" x="259" y="262" text-anchor="middle">Jan 2025</text>
+          <line class="axis" x1="350" y1="244" x2="350" y2="249"/><text class="lbl" x="350" y="262" text-anchor="middle">Feb</text>
+          <line class="axis" x1="432" y1="244" x2="432" y2="249"/><text class="lbl" x="432" y="262" text-anchor="middle">Mar</text>
+          <line class="axis" x1="523" y1="244" x2="523" y2="249"/><text class="lbl" x="523" y="262" text-anchor="middle">Apr</text>
+          <line class="axis" x1="611" y1="244" x2="611" y2="249"/><text class="lbl" x="611" y="262" text-anchor="middle">May</text>
+          <line class="axis" x1="702" y1="244" x2="702" y2="249"/><text class="lbl" x="702" y="262" text-anchor="middle">Jun</text>
+          <line class="axis" x1="790" y1="244" x2="790" y2="249"/><text class="lbl" x="790" y="262" text-anchor="middle">Jul</text>
+          <line class="axis" x1="881" y1="244" x2="881" y2="249"/><text class="lbl" x="881" y="262" text-anchor="middle">Aug</text>
+          <line class="axis" x1="972" y1="244" x2="972" y2="249"/><text class="lbl" x="972" y="262" text-anchor="middle">Sep</text>
+          <line class="axis" x1="1060" y1="244" x2="1060" y2="249"/><text class="lbl" x="1060" y="262" text-anchor="middle">Oct</text>
+        </g>
+        <text class="lbl" x="80" y="284">effective_date is a DATE: a price applies from 00:00:00 on that day.</text>
+      </svg>
+    </div>
+    <figcaption>Real change-points of one product in the synthetic sources. Each bar above the chart is one
+      <code>ref_product_costs</code> row: <code>next_effective_date</code> is the exclusive upper bound of its validity interval,
+      NULL while it is still current, which lets the same lookup be written as a range join.</figcaption>
+  </figure>
+
+  <div class="compare" role="list">
+    <div class="option bad" role="listitem">
+      <p class="opt-h">Equality join on <code>product_code</code></p>
+      <pre><code>JOIN ref_product_costs
+  USING (product_code)</code></pre>
+      <p>Returns one row per change-point, three for this claim. Every sum over the result silently multiplies.</p>
+      <p class="verdict">Fans out</p>
+    </div>
+    <div class="option bad" role="listitem">
+      <p class="opt-h">Newest price overall</p>
+      <pre><code>max(effective_date)
+  per product_code</code></pre>
+      <p>One row, but 60.16635 took effect on 2025-05-16, weeks after this claim. Past claims are costed with future prices.</p>
+      <p class="verdict">Leaks the future</p>
+    </div>
+    <div class="option good" role="listitem">
+      <p class="opt-h">As-of join, used by <code>fct_claims</code></p>
+      <pre><code>ASOF LEFT JOIN ref_product_costs AS cost
+  ON cost.product_code = c.product_code
+ AND c.submitted_at &gt;= cost.effective_date</code></pre>
+      <p>One row per claim at most: the change-point already in effect, 63.33300 from 2025-02-04.</p>
+      <p class="verdict">Correct as of submission</p>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="prose">
+      <h3>Restatements</h3>
+      <p>The same (<code>product_code</code>, <code>effective_date</code>) appears in many publications, and a later publication
+        can correct a price already published. <code>ref_product_costs</code> keeps one row per change-point with
+        <code>arg_max(unit_cost, published_date)</code>, so the latest publication wins, and records
+        <code>first_published_date</code>, <code>last_published_date</code>, <code>publication_rows</code> and
+        <code>was_restated</code> (<code>count(DISTINCT unit_cost) &gt; 1</code>). Every published row stays in
+        <code>staging.cost_publications</code> with its <code>source_file</code>.</p>
+    </div>
+    <div class="prose">
+      <h3><code>reference_cost_status</code></h3>
+      <div class="table-scroll">
+        <table class="stack">
+          <thead><tr><th scope="col">Value</th><th scope="col">When</th><th scope="col">reference_cost</th></tr></thead>
+          <tbody>
+            <tr><td><code>'matched'</code></td><td>a change-point was in effect at <code>submitted_at</code></td><td><code>CAST(units AS DECIMAL(38, 3)) * reference_unit_cost</code></td></tr>
+            <tr><td><code>'before_first_effective_date'</code></td><td>the product has cost history, but the claim predates its first <code>effective_date</code></td><td>NULL</td></tr>
+            <tr><td><code>'no_cost_history'</code></td><td>no <code>ref_product_costs</code> row for the product at all</td><td>NULL</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small">Nothing is imputed: an uncosted claim keeps a NULL cost and says why.</p>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="tables" aria-labelledby="tables-h">
+  <header>
+    <h2 id="tables-h">Tables &amp; views</h2>
+    <p class="lede">Every object in the warehouse file, with its grain and key. "Asserted" means a build invariant in
+      <code>claims_warehouse/checks.py</code> fails the build if the key breaks; types are the DuckDB column types.</p>
+  </header>
+
+  <div class="layer">
+    <h3 class="layer-h">Raw typed staging <span class="note">schema <code>staging</code> · <code>00_staging_schema.sql</code>, filled by <code>build.py</code></span></h3>
+    <div class="cards">
+      <article class="card l-stg">
+        <header><h4>staging.claims_raw</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per source claim record, every record exactly once</dd></div>
+          <div><dt>Key</dt><dd><code>record_seq</code>, the load order across all files of the stream</dd></div></dl>
+        <div class="groups">
+          <div><p class="grp-h">lineage</p><ul class="cols"><li><code>record_seq</code><span>BIGINT</span></li><li><code>source_file</code><span>VARCHAR</span></li><li><code>source_row</code><span>INTEGER</span></li></ul></div>
+          <div><p class="grp-h">typed fields, NULL where untypable</p><ul class="cols"><li><code>claim_id</code><span>VARCHAR</span></li><li><code>provider_id</code><span>VARCHAR</span></li><li><code>product_code</code><span>VARCHAR</span></li><li><code>gross_amount</code><span>DECIMAL(12,2)</span></li><li><code>units</code><span>DECIMAL(12,3)</span></li><li><code>service_fee</code><span>DECIMAL(10,2)</span></li><li><code>submitted_at</code><span>TIMESTAMP</span></li></ul></div>
+          <div><p class="grp-h">contract</p><ul class="cols"><li><code>schema_reasons</code><span>VARCHAR[]</span></li><li><code>raw</code><span>VARCHAR</span></li></ul></div>
+        </div>
+      </article>
+      <article class="card l-stg">
+        <header><h4>staging.lookups_raw</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per source lookup record, every record exactly once</dd></div>
+          <div><dt>Key</dt><dd><code>record_seq</code>, the load order across all files of the stream</dd></div></dl>
+        <div class="groups">
+          <div><p class="grp-h">lineage</p><ul class="cols"><li><code>record_seq</code><span>BIGINT</span></li><li><code>source_file</code><span>VARCHAR</span></li><li><code>source_row</code><span>INTEGER</span></li></ul></div>
+          <div><p class="grp-h">typed fields, NULL where untypable</p><ul class="cols"><li><code>lookup_id</code><span>VARCHAR</span></li><li><code>claim_id</code><span>VARCHAR</span></li><li><code>product_code</code><span>VARCHAR</span></li><li><code>partner_code</code><span>VARCHAR</span></li><li><code>channel</code><span>VARCHAR</span></li><li><code>looked_up_at</code><span>TIMESTAMP</span></li></ul></div>
+          <div><p class="grp-h">contract</p><ul class="cols"><li><code>schema_reasons</code><span>VARCHAR[]</span></li><li><code>raw</code><span>VARCHAR</span></li></ul></div>
+        </div>
+      </article>
+      <article class="card l-stg">
+        <header><h4>staging.reversals_raw</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per source reversal record, every record exactly once</dd></div>
+          <div><dt>Key</dt><dd><code>record_seq</code>, the load order across all files of the stream</dd></div></dl>
+        <div class="groups">
+          <div><p class="grp-h">lineage</p><ul class="cols"><li><code>record_seq</code><span>BIGINT</span></li><li><code>source_file</code><span>VARCHAR</span></li><li><code>source_row</code><span>INTEGER</span></li></ul></div>
+          <div><p class="grp-h">typed fields, NULL where untypable</p><ul class="cols"><li><code>reversal_id</code><span>VARCHAR</span></li><li><code>claim_id</code><span>VARCHAR</span></li><li><code>reversed_at</code><span>TIMESTAMP</span></li></ul></div>
+          <div><p class="grp-h">contract</p><ul class="cols"><li><code>schema_reasons</code><span>VARCHAR[]</span></li><li><code>raw</code><span>VARCHAR</span></li></ul></div>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  <div class="layer">
+    <h3 class="layer-h">Contract-valid subsets, claim identity &amp; quarantine <span class="note"><code>20_staging_valid.sql</code> · <code>30_rejects.sql</code></span></h3>
+    <div class="cards">
+      <article class="card l-stg">
+        <header><h4>staging.claims<br>staging.lookups<br>staging.reversals</h4><span class="kind">3 tables</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per contract-valid record: <code>SELECT * … WHERE len(schema_reasons) = 0</code></dd></div>
+          <div><dt>Key</dt><dd><code>record_seq</code>. Source ids are not trusted yet: a <code>claim_id</code> can collide or be redelivered, and <code>reversal_id</code> is reused.</dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><p class="small muted">Identical to the matching <code>*_raw</code> table; <code>schema_reasons</code> is always empty. Everything downstream builds on these.</p></div></div>
+      </article>
+      <article class="card l-dq">
+        <header><h4>staging.ambiguous_claim_ids</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per <code>claim_id</code> whose contract-valid copies disagree on at least one field, from any provider</dd></div>
+          <div><dt>Key</dt><dd><code>claim_id</code>: <code>HAVING count(DISTINCT (provider_id, product_code, gross_amount, units, service_fee, submitted_at)) &gt; 1</code></dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><ul class="cols"><li><code>claim_id</code><span>VARCHAR</span></li></ul></div>
+          <p class="small muted">Keeping one copy would silently delete a different real claim, so every copy is quarantined: no survivor is picked and no composite key is invented.</p></div>
+      </article>
+      <article class="card l-dq">
+        <header><h4>staging.redelivered_claims</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per later copy of an unambiguous <code>claim_id</code>: identical, after typing, to an earlier delivery</dd></div>
+          <div><dt>Key</dt><dd><code>record_seq</code>: <code>row_number() OVER (PARTITION BY claim_id ORDER BY record_seq) &gt; 1</code></dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><ul class="cols"><li><code>record_seq</code><span>BIGINT</span></li><li><code>claim_id</code><span>VARCHAR</span></li></ul></div>
+          <p class="small muted">Later copies are rejected as <code>duplicate_redelivery</code>: dropping an exact copy loses nothing and invents nothing. The first delivery is not a redelivery; it reaches <code>fct_claims</code> unless another rule excludes it, so an out-of-network claim has every copy rejected, the later ones with both reasons.</p></div>
+      </article>
+      <article class="card l-dq wide">
+        <header><h4>rejects</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per excluded source record, across all three streams, carrying every reason that applies</dd></div>
+          <div><dt>Key</dt><dd><code>reject_sk</code> = <code>row_number() OVER (ORDER BY stream, record_seq)</code>; lineage <code>(stream, source_file, source_row)</code></dd></div></dl>
+        <div class="groups">
+          <div><p class="grp-h">identity &amp; lineage</p><ul class="cols"><li><code>reject_sk</code><span>BIGINT</span></li><li><code>stream</code><span>VARCHAR</span></li><li><code>source_file</code><span>VARCHAR</span></li><li><code>source_row</code><span>INTEGER</span></li></ul></div>
+          <div><p class="grp-h">why &amp; what</p><ul class="cols"><li><code>reasons</code><span>VARCHAR[]</span></li><li><code>raw</code><span>VARCHAR</span></li></ul></div>
+          <p class="small muted">Claims add three exclusions to their record contract: <code>out_of_network</code>, <code>ambiguous_duplicate_id</code> and <code>duplicate_redelivery</code>. <code>raw</code> keeps the digits and repeated keys exactly as delivered.</p>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  <div class="layer">
+    <h3 class="layer-h">Reference staging <span class="note">as delivered · <code>10_reference.sql</code> · <code>40_reference_costs.sql</code></span></h3>
+    <div class="cards pair">
+      <article class="card l-stg">
+        <header><h4>staging.partners</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per partner row in <code>partners.csv</code>, exactly as delivered</dd></div>
+          <div><dt>Key</dt><dd><code>partner_code</code>, asserted unique and not null through <code>dim_partner</code></dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns, all text</p><ul class="cols"><li><code>partner_code</code><span>VARCHAR</span></li><li><code>partner_name</code><span>VARCHAR</span></li><li><code>flat_payout_cents</code><span>VARCHAR</span></li><li><code>revenue_share_pct</code><span>VARCHAR</span></li></ul></div>
+          <p class="small muted">The numbers stay text so the gate can check their exact shape: a typed read would round 150.7 cents to 151 silently. Asserted: exactly one payout term, whole cents &gt;= 0, a share of 0-100 with at most 2 decimals.</p></div>
+      </article>
+      <article class="card l-stg">
+        <header><h4>staging.cost_publications</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per published price row, from every weekly publication file</dd></div>
+          <div><dt>Key</dt><dd><code>(product_code, effective_date, published_date)</code>, asserted: a publication lists each change-point at most once</dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><ul class="cols"><li><code>product_code</code><span>VARCHAR</span></li><li><code>unit_of_measure</code><span>VARCHAR</span></li><li><code>unit_cost</code><span>VARCHAR</span></li><li><code>effective_date</code><span>DATE</span></li><li><code>published_date</code><span>DATE</span></li><li><code>source_file</code><span>VARCHAR</span></li></ul></div>
+          <p class="small muted">Asserted complete, with an exact <code>unit_cost</code> (&gt;= 0, at most 5 decimals); <code>ref_product_costs</code> casts it with <code>TRY_CAST(unit_cost AS DECIMAL(12, 5))</code>.</p></div>
+      </article>
+    </div>
+  </div>
+
+  <div class="layer">
+    <h3 class="layer-h">Dimensions <span class="note"><code>10_reference.sql</code> · single current snapshots, contracts asserted</span></h3>
+    <div class="cards">
+      <article class="card l-ref">
+        <header><h4>dim_provider</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per in-network provider; also the scope gate</dd></div>
+          <div><dt>Key</dt><dd><code>provider_id</code>, asserted unique and not null</dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><ul class="cols"><li><code>provider_id</code><span>VARCHAR</span></li><li><code>network</code><span>VARCHAR</span></li><li><code>region</code><span>VARCHAR</span></li></ul></div></div>
+      </article>
+      <article class="card l-ref">
+        <header><h4>dim_partner</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per partner with its payout term</dd></div>
+          <div><dt>Key</dt><dd><code>partner_code</code>, asserted unique and not null</dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><ul class="cols"><li><code>partner_code</code><span>VARCHAR</span></li><li><code>partner_name</code><span>VARCHAR</span></li><li><code>flat_payout_cents</code><span>INTEGER</span></li><li><code>revenue_share_pct</code><span>DECIMAL(5,2)</span></li><li><code>payout_model</code><span>VARCHAR</span></li></ul></div>
+          <p class="small muted">Cast from <code>staging.partners</code>. <code>payout_model</code> is <code>'flat'</code> when <code>flat_payout_cents</code> is set, else <code>'revenue_share'</code>.</p></div>
+      </article>
+      <article class="card l-ref">
+        <header><h4>dim_product</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per catalog product</dd></div>
+          <div><dt>Key</dt><dd><code>product_code</code>, asserted unique and not null</dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><ul class="cols"><li><code>product_code</code><span>VARCHAR</span></li><li><code>product_name</code><span>VARCHAR</span></li><li><code>category</code><span>VARCHAR</span></li><li><code>unit_of_measure</code><span>VARCHAR</span></li></ul></div></div>
+      </article>
+    </div>
+  </div>
+
+  <div class="layer">
+    <h3 class="layer-h">Effective-dated reference costs <span class="note"><code>40_reference_costs.sql</code></span></h3>
+    <div class="cards">
+      <article class="card l-ref wide">
+        <header><h4>ref_product_costs</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per price change-point; a restated change-point keeps its latest published value</dd></div>
+          <div><dt>Key</dt><dd><code>(product_code, effective_date)</code>, asserted unique</dd></div></dl>
+        <div class="groups">
+          <div><p class="grp-h">validity interval</p><ul class="cols"><li><code>product_code</code><span>VARCHAR</span></li><li><code>effective_date</code><span>DATE</span></li><li><code>next_effective_date</code><span>DATE</span></li></ul></div>
+          <div><p class="grp-h">price</p><ul class="cols"><li><code>unit_cost</code><span>DECIMAL(12,5)</span></li><li><code>unit_of_measure</code><span>VARCHAR</span></li></ul></div>
+          <div><p class="grp-h">publication history</p><ul class="cols"><li><code>first_published_date</code><span>DATE</span></li><li><code>last_published_date</code><span>DATE</span></li><li><code>publication_rows</code><span>BIGINT</span></li><li><code>was_restated</code><span>BOOLEAN</span></li></ul></div>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  <div class="layer">
+    <h3 class="layer-h">Facts <span class="note"><code>50_fct_claims.sql</code> · <code>60_fct_lookups.sql</code> · <code>70_fct_reversals.sql</code></span></h3>
+    <div class="cards pair">
+      <article class="card l-fct wide">
+        <header><h4>fct_claims</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per in-scope claim: contract-valid, provider in network, claim id unambiguous, first delivery only (row count asserted)</dd></div>
+          <div><dt>Key</dt><dd><code>claim_id</code>, a true primary key, asserted unique</dd></div></dl>
+        <div class="groups">
+          <div><p class="grp-h">identity &amp; dimensions</p><ul class="cols"><li><code>claim_id</code><span>VARCHAR</span></li><li><code>provider_id</code><span>VARCHAR</span></li><li><code>network</code><span>VARCHAR</span></li><li><code>region</code><span>VARCHAR</span></li><li><code>product_code</code><span>VARCHAR</span></li><li><code>submitted_at</code><span>TIMESTAMP</span></li></ul><p class="grp-h">as submitted</p><ul class="cols"><li><code>gross_amount</code><span>DECIMAL(12,2)</span></li><li><code>units</code><span>DECIMAL(12,3)</span></li><li><code>service_fee</code><span>DECIMAL(10,2)</span></li></ul></div>
+          <div><p class="grp-h">attribution</p><ul class="cols"><li><code>lookup_id</code><span>VARCHAR</span></li><li><code>has_lookup</code><span>BOOLEAN</span></li><li><code>partner_code</code><span>VARCHAR</span></li><li><code>channel</code><span>VARCHAR</span></li><li><code>attribution_status</code><span>VARCHAR</span></li></ul><p class="grp-h">reversal</p><ul class="cols"><li><code>is_reversed</code><span>BOOLEAN</span></li><li><code>reversed_at</code><span>TIMESTAMP</span></li></ul><p class="grp-h">partner economics</p><ul class="cols"><li><code>partner_payout</code><span>DECIMAL(18,6)</span></li><li><code>retained_fee</code><span>DECIMAL(18,6)</span></li></ul></div>
+          <div><p class="grp-h">reference cost</p><ul class="cols"><li><code>reference_unit_cost</code><span>DECIMAL(12,5)</span></li><li><code>reference_effective_date</code><span>DATE</span></li><li><code>reference_cost</code><span>DECIMAL(38,8)</span></li><li><code>reference_cost_status</code><span>VARCHAR</span></li></ul><p class="grp-h">reversal-aware</p><ul class="cols"><li><code>is_net_claim</code><span>INTEGER</span></li><li><code>net_gross_amount</code><span>DECIMAL(12,2)</span></li><li><code>net_units</code><span>DECIMAL(13,3)</span></li><li><code>net_service_fee</code><span>DECIMAL(12,2)</span></li><li><code>net_partner_payout</code><span>DECIMAL(18,6)</span></li><li><code>net_retained_fee</code><span>DECIMAL(18,6)</span></li><li><code>net_reference_cost</code><span>DECIMAL(38,8)</span></li></ul></div>
+        </div>
+      </article>
+      <article class="card l-fct">
+        <header><h4>fct_lookups</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per contract-valid lookup, never scope-filtered (row count asserted)</dd></div>
+          <div><dt>Key</dt><dd><code>lookup_id</code>, asserted unique</dd></div></dl>
+        <div class="groups">
+          <div><p class="grp-h">the lookup</p><ul class="cols"><li><code>lookup_id</code><span>VARCHAR</span></li><li><code>partner_code</code><span>VARCHAR</span></li><li><code>channel</code><span>VARCHAR</span></li><li><code>product_code</code><span>VARCHAR</span></li><li><code>looked_up_at</code><span>TIMESTAMP</span></li></ul></div>
+          <div><p class="grp-h">conversion</p><ul class="cols"><li><code>claim_id</code><span>VARCHAR</span></li><li><code>has_claim_reference</code><span>BOOLEAN</span></li><li><code>claim_resolved</code><span>BOOLEAN</span></li><li><code>in_scope_conversion</code><span>BOOLEAN</span></li><li><code>resolution_status</code><span>VARCHAR</span></li><li><code>minutes_to_claim</code><span>BIGINT</span></li></ul></div>
+        </div>
+      </article>
+      <article class="card l-fct">
+        <header><h4>fct_reversals</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per contract-valid reversal event, never scope-filtered (row count asserted)</dd></div>
+          <div><dt>Key</dt><dd><code>reversal_sk</code> = <code>row_number() OVER (ORDER BY reversed_at, source_file, source_row)</code>, asserted unique. The source <code>reversal_id</code> is not unique.</dd></div></dl>
+        <div class="groups">
+          <div><p class="grp-h">the event</p><ul class="cols"><li><code>reversal_sk</code><span>BIGINT</span></li><li><code>reversal_id</code><span>VARCHAR</span></li><li><code>claim_id</code><span>VARCHAR</span></li><li><code>reversed_at</code><span>TIMESTAMP</span></li><li><code>resolution_status</code><span>VARCHAR</span></li></ul></div>
+          <div><p class="grp-h">lineage</p><ul class="cols"><li><code>source_file</code><span>VARCHAR</span></li><li><code>source_row</code><span>INTEGER</span></li></ul></div>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  <div class="layer">
+    <h3 class="layer-h">Audit &amp; build <span class="note"><code>80_audit.sql</code> · <code>build.py</code></span></h3>
+    <div class="cards">
+      <article class="card l-aud">
+        <header><h4>audit_reconciliation</h4><span class="kind">view</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per stream: <code>'claims'</code>, <code>'lookups'</code>, <code>'reversals'</code></dd></div>
+          <div><dt>Key</dt><dd><code>stream</code>; every row must be <code>balanced</code> (asserted)</dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><ul class="cols"><li><code>stream</code><span>VARCHAR</span></li><li><code>source_records</code><span>BIGINT</span></li><li><code>curated_records</code><span>BIGINT</span></li><li><code>rejected_records</code><span>BIGINT</span></li><li><code>balanced</code><span>BOOLEAN</span></li></ul></div></div>
+      </article>
+      <article class="card l-aud">
+        <header><h4>audit_reject_reasons</h4><span class="kind">view</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>one row per (stream, reason) found in <code>rejects</code></dd></div>
+          <div><dt>Key</dt><dd><code>(stream, reason)</code>; counts overlap because one record can carry several reasons</dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><ul class="cols"><li><code>stream</code><span>VARCHAR</span></li><li><code>reason</code><span>VARCHAR</span></li><li><code>records</code><span>BIGINT</span></li></ul></div></div>
+      </article>
+      <article class="card l-aud">
+        <header><h4>build_info</h4><span class="kind">table</span></header>
+        <dl class="meta"><div><dt>Grain</dt><dd>a single row describing the build that produced this file</dd></div>
+          <div><dt>Key</dt><dd>none needed: one row</dd></div></dl>
+        <div class="groups"><div><p class="grp-h">columns</p><ul class="cols"><li><code>built_at_utc</code><span>TIMESTAMP</span></li><li><code>source_name</code><span>VARCHAR</span></li><li><code>synthetic_seed</code><span>BIGINT</span></li><li><code>duckdb_version</code><span>VARCHAR</span></li></ul></div>
+          <p class="small muted"><code>synthetic_seed</code> comes from the generator's <code>_expected.json</code>, NULL when that file is absent.</p></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="semantics" aria-labelledby="sem-h">
+  <header>
+    <h2 id="sem-h">Semantics</h2>
+    <p class="lede">The facts keep unknowns visible. Most rules below exist so that a sum cannot quietly turn missing
+      information into a number.</p>
+  </header>
+
+  <div class="two-col">
+    <div class="prose">
+      <h3>Reversal-aware <code>net_*</code> fields</h3>
+      <p>A claim is reversed when at least one contract-valid reversal references it; several reversals still reverse it once,
+        and the earliest dates it. A reversed claim contributes a <strong>known zero</strong>, even where the underlying value
+        was unknown. Otherwise the submitted value passes through, <strong>NULL included</strong>.</p>
+      <pre><code>CASE WHEN is_reversed THEN 0 ELSE partner_payout END AS net_partner_payout</code></pre>
+      <p>The same rule builds <code>net_gross_amount</code>, <code>net_units</code>, <code>net_service_fee</code>,
+        <code>net_partner_payout</code>, <code>net_retained_fee</code> and <code>net_reference_cost</code>;
+        <code>is_net_claim</code> is 0 or 1. Summing a <code>net_*</code> column equals summing its source column over
+        non-reversed claims, with no filter to forget.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col">is_reversed</th><th scope="col">partner_payout</th><th scope="col">net_partner_payout</th></tr></thead>
+          <tbody>
+            <tr><td><code>false</code></td><td>0.750000</td><td>0.750000</td></tr>
+            <tr><td><code>false</code></td><td class="null">NULL</td><td class="null">NULL</td></tr>
+            <tr><td><code>true</code></td><td>0.750000</td><td>0.000000</td></tr>
+            <tr><td><code>true</code></td><td class="null">NULL</td><td>0.000000</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="prose">
+      <h3>NULL is unknown, 0 is a known zero</h3>
+      <div class="table-scroll">
+        <table class="stack slim-second">
+          <thead><tr><th scope="col">Situation</th><th scope="col">Value</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>claim with no lookup</td><td><code>partner_payout</code> <span class="null">NULL</span></td><td><code>'unattributed'</code>: nobody knows whom it would pay</td></tr>
+            <tr><td>partner without terms on file</td><td><code>partner_payout</code> <span class="null">NULL</span></td><td><code>'attributed_unknown_terms'</code>: the lookup's <code>partner_code</code> has no <code>dim_partner</code> row</td></tr>
+            <tr><td><code>flat_payout_cents = 0</code></td><td><code>partner_payout</code> 0.000000</td><td>a real commercial term: the partner is paid nothing</td></tr>
+            <tr><td>no fee charged</td><td><code>service_fee</code> 0.00</td><td>valid under the contract, which only rejects a fee below zero</td></tr>
+            <tr><td>no cost history</td><td><code>reference_cost</code> <span class="null">NULL</span></td><td><code>'no_cost_history'</code>: never published, never imputed</td></tr>
+            <tr><td>reversed claim</td><td><code>net_*</code> 0</td><td>known zero, whatever the source value was</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="prose">
+      <h3>Attribution and partner economics</h3>
+      <p>Claims carry no partner. <code>partner_code</code>, <code>lookup_id</code> and <code>channel</code> come only from the
+        lookup that produced the claim, and the build asserts at most one valid lookup per in-scope claim.</p>
+      <div class="table-scroll">
+        <table class="stack slim-second">
+          <thead><tr><th scope="col">attribution_status</th><th scope="col">Rule</th><th scope="col">partner_payout</th></tr></thead>
+          <tbody>
+            <tr><td><code>'attributed'</code></td><td>has a lookup, partner has terms</td><td><code>'flat'</code>: <code>flat_payout_cents * 0.01</code><br><code>'revenue_share'</code>: <code>service_fee * revenue_share_pct * 0.01</code></td></tr>
+            <tr><td><code>'attributed_unknown_terms'</code></td><td>has a lookup, <code>payout_model</code> is NULL</td><td class="null">NULL</td></tr>
+            <tr><td><code>'unattributed'</code></td><td><code>NOT has_lookup</code></td><td class="null">NULL</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>retained_fee = service_fee - partner_payout</code> is the closest observable <strong>margin proxy</strong>: the
+        part of its fee the platform keeps. It is not accounting margin (the sources hold no operating costs), it is NULL
+        whenever the payout is unknown, and it is <strong>negative</strong> when a flat payout exceeds a small fee.</p>
+    </div>
+
+    <div class="prose">
+      <h3>The aggregation trap</h3>
+      <p>Within <code>'unattributed'</code> or <code>'attributed_unknown_terms'</code> claims, reversed rows hold a known 0 and
+        the rest hold NULL. <code>sum()</code> skips the NULLs and adds the zeros:</p>
+      <div class="trap" aria-label="Example: summing a column that mixes known zeros and unknowns">
+        <span class="cell">0</span><span class="cell null">NULL</span><span class="cell null">NULL</span><span class="cell">0</span><span class="cell null">NULL</span>
+        <span class="arrow" aria-hidden="true">→</span><span class="cell result">sum() = 0.00</span>
+      </div>
+      <p>That prints as "nothing paid, nothing kept" when the truth is "unknown". Filter to the population where the measure is
+        defined:</p>
+      <pre><code>SELECT sum(net_partner_payout)
+         FILTER (WHERE attribution_status = 'attributed'),
+       sum(net_retained_fee)
+         FILTER (WHERE attribution_status = 'attributed')
+FROM fct_claims;</code></pre>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="prose">
+      <h3>Three conversion flags, nested</h3>
+      <p>Each flag on <code>fct_lookups</code> implies the one outside it. The gaps between them are diagnostics, not rounding.</p>
+      <div class="nest">
+        <div class="ring">
+          <p><code>has_claim_reference</code> <span>the funnel recorded a conversion: <code>claim_id IS NOT NULL</code>. The business funnel metric.</span></p>
+          <div class="ring">
+            <p><code>claim_resolved</code> <span>the id exists on some record in <code>staging.claims_raw</code>, valid or not. Referential health.</span></p>
+            <div class="ring inner">
+              <p><code>in_scope_conversion</code> <span>the claim is in <code>fct_claims</code>. The only basis that may be combined with claim economics; <code>minutes_to_claim</code> is set only here.</span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="prose">
+      <h3><code>resolution_status</code></h3>
+      <p>Lookups and reversals are never scope-filtered. An unusable claim reference becomes a status and the row stays;
+        the first matching rule wins, top to bottom.</p>
+      <div class="table-scroll">
+        <table class="stack">
+          <thead><tr><th scope="col">fct_lookups</th><th scope="col">fct_reversals</th><th scope="col">When the claim_id…</th></tr></thead>
+          <tbody>
+            <tr><td><code>'no_claim'</code></td><td class="muted">n/a</td><td>is NULL (a reversal must name a claim)</td></tr>
+            <tr><td><code>'resolved'</code></td><td><code>'applied'</code></td><td>is in <code>fct_claims</code></td></tr>
+            <tr><td><code>'claim_ambiguous_id'</code></td><td><code>'claim_ambiguous_id'</code></td><td>is in <code>staging.ambiguous_claim_ids</code></td></tr>
+            <tr><td><code>'claim_out_of_network'</code></td><td><code>'claim_out_of_network'</code></td><td>belongs to a contract-valid claim whose provider is not in <code>dim_provider</code></td></tr>
+            <tr><td><code>'claim_rejected'</code></td><td><code>'claim_rejected'</code></td><td>appears on a claim record that broke its contract</td></tr>
+            <tr><td><code>'claim_not_found'</code></td><td><code>'claim_not_found'</code></td><td>matches no claim record at all</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="small muted">Only <code>'applied'</code> reversals change claim economics, through <code>fct_claims.is_reversed</code>.</p>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="quality" aria-labelledby="dq-h">
+  <header>
+    <h2 id="dq-h">Data quality: validate, never repair</h2>
+    <p class="lede">A record that breaks its contract is excluded whole, with every reason it triggered; the fields that did
+      pass are still typed, so a rejected record stays easy to inspect. Nothing is imputed, rounded or salvaged:
+      <code>"ten"</code> is not 10, 19.999 is not 19.99, and 03/14/2025 is not a timestamp. Numbers are checked exactly
+      as delivered: the build parses JSON numbers as Decimal, never as binary floats.</p>
+  </header>
+
+  <div class="table-scroll">
+    <table class="vocab stack">
+      <thead><tr><th scope="col">Reason</th><th scope="col">Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>missing_&lt;field&gt;</code></td><td>absent, null, or an empty string (except a lookup's nullable <code>claim_id</code>, below)</td></tr>
+        <tr><td><code>bad_&lt;field&gt;</code></td><td>present but unusable: wrong JSON type (booleans and numeric strings included), non-finite, more precision or magnitude than the column allows, an unparseable timestamp, text that is not valid Unicode, or a key sent more than once in the same record</td></tr>
+        <tr><td><code>nonpositive_&lt;field&gt;</code>, <code>negative_&lt;field&gt;</code></td><td>well-typed, but impossible for the business</td></tr>
+        <tr><td><code>not_an_object</code></td><td>the array element is not a JSON object</td></tr>
+        <tr><td><code>out_of_network</code></td><td>claims only: a typed <code>provider_id</code> that is not in <code>dim_provider</code>, added alongside any contract reasons</td></tr>
+        <tr><td><code>ambiguous_duplicate_id</code></td><td>claims only: a contract-valid copy of a <code>claim_id</code> whose copies disagree on at least one field; every copy is quarantined</td></tr>
+        <tr><td><code>duplicate_redelivery</code></td><td>claims only: a later copy of a <code>claim_id</code>, identical after typing to an earlier delivery. The first delivery (lowest <code>record_seq</code>) is not rejected as a redelivery; it reaches <code>fct_claims</code> unless another rule, such as <code>out_of_network</code>, excludes it</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="contracts">
+    <div class="prose">
+      <h3>claims</h3>
+      <div class="table-scroll"><table class="stack slim-second">
+        <thead><tr><th scope="col">Field</th><th scope="col">Contract</th><th scope="col">Reasons</th></tr></thead>
+        <tbody>
+          <tr><td><code>claim_id</code></td><td>string</td><td><code>missing_claim_id</code> <code>bad_claim_id</code></td></tr>
+          <tr><td><code>provider_id</code></td><td>string, in network</td><td><code>missing_provider_id</code> <code>bad_provider_id</code> <code>out_of_network</code></td></tr>
+          <tr><td><code>product_code</code></td><td>string</td><td><code>missing_product_code</code> <code>bad_product_code</code></td></tr>
+          <tr><td><code>gross_amount</code></td><td>fits DECIMAL(12,2), &gt; 0</td><td><code>missing_gross_amount</code> <code>bad_gross_amount</code> <code>nonpositive_gross_amount</code></td></tr>
+          <tr><td><code>units</code></td><td>fits DECIMAL(12,3), &gt; 0</td><td><code>missing_units</code> <code>bad_units</code> <code>nonpositive_units</code></td></tr>
+          <tr><td><code>service_fee</code></td><td>fits DECIMAL(10,2), &ge; 0</td><td><code>missing_service_fee</code> <code>bad_service_fee</code> <code>negative_service_fee</code></td></tr>
+          <tr><td><code>submitted_at</code></td><td>YYYY-MM-DDTHH:MM:SS</td><td><code>missing_submitted_at</code> <code>bad_submitted_at</code></td></tr>
+          <tr><td>record</td><td>object; id unambiguous; not a repeat delivery</td><td><code>not_an_object</code> <code>ambiguous_duplicate_id</code> <code>duplicate_redelivery</code></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="prose">
+      <h3>lookups</h3>
+      <div class="table-scroll"><table class="stack slim-second">
+        <thead><tr><th scope="col">Field</th><th scope="col">Contract</th><th scope="col">Reasons</th></tr></thead>
+        <tbody>
+          <tr><td><code>lookup_id</code></td><td>string</td><td><code>missing_lookup_id</code> <code>bad_lookup_id</code></td></tr>
+          <tr><td><code>claim_id</code></td><td>key present (absent is missing); null means no conversion; an empty string or a non-string is bad, not missing</td><td><code>missing_claim_id</code> <code>bad_claim_id</code></td></tr>
+          <tr><td><code>product_code</code></td><td>string</td><td><code>missing_product_code</code> <code>bad_product_code</code></td></tr>
+          <tr><td><code>partner_code</code></td><td>string</td><td><code>missing_partner_code</code> <code>bad_partner_code</code></td></tr>
+          <tr><td><code>channel</code></td><td>string; any label kept verbatim</td><td><code>missing_channel</code> <code>bad_channel</code></td></tr>
+          <tr><td><code>looked_up_at</code></td><td>YYYY-MM-DDTHH:MM:SS</td><td><code>missing_looked_up_at</code> <code>bad_looked_up_at</code></td></tr>
+          <tr><td>record</td><td>object</td><td><code>not_an_object</code></td></tr>
+        </tbody>
+      </table></div>
+      <h3>reversals</h3>
+      <div class="table-scroll"><table class="stack slim-second">
+        <thead><tr><th scope="col">Field</th><th scope="col">Contract</th><th scope="col">Reasons</th></tr></thead>
+        <tbody>
+          <tr><td><code>reversal_id</code></td><td>string, need not be unique</td><td><code>missing_reversal_id</code> <code>bad_reversal_id</code></td></tr>
+          <tr><td><code>claim_id</code></td><td>string</td><td><code>missing_claim_id</code> <code>bad_claim_id</code></td></tr>
+          <tr><td><code>reversed_at</code></td><td>YYYY-MM-DDTHH:MM:SS</td><td><code>missing_reversed_at</code> <code>bad_reversed_at</code></td></tr>
+          <tr><td>record</td><td>object</td><td><code>not_an_object</code></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="prose">
+      <h3>Reconciliation identity</h3>
+      <p class="identity"><code>source_records = curated_records + rejected_records</code></p>
+      <p>Checked per stream in <code>audit_reconciliation</code>: raw staging rows on the left, the stream's fact plus its
+        <code>rejects</code> rows on the right. Every source record is in exactly one of the two, never both and never neither.
+        Reasons overlap, so per-reason counts in <code>audit_reject_reasons</code> intentionally do not add up to the stream
+        total.</p>
+      <p>Conditions that are legal but worth watching (unexpected <code>channel</code> labels, lookups with a
+        <code>product_code</code> outside the catalog, reused <code>reversal_id</code> values) are reported by
+        <code>analyses/11_data_quality_observations.sql</code>, never repaired.</p>
+    </div>
+    <div class="prose">
+      <h3>Build invariants</h3>
+      <p>Each query in <code>checks.py</code> counts offending rows; any non-zero result aborts the build before the new file
+        replaces the old one. They guard structure. Business semantics are covered by the test suite.</p>
+      <ul class="inv">
+        <li class="inv-h">Reference contracts</li>
+        <li>dim_provider.provider_id is unique</li>
+        <li>dim_partner.partner_code is unique</li>
+        <li>dim_product.product_code is unique</li>
+        <li>reference keys are never null</li>
+        <li>every partner has exactly one payout term (flat cents or revenue share)</li>
+        <li>partner terms are exact and in range (whole cents &gt;= 0; share 0-100, at most 2 decimals)</li>
+        <li>cost publication rows are complete with exact unit costs (&gt;= 0, at most 5 decimals)</li>
+        <li>a cost publication lists each (product_code, effective_date) at most once</li>
+        <li>ref_product_costs has one row per (product_code, effective_date)</li>
+        <li class="inv-h">Keys &amp; grain</li>
+        <li>no in-scope claim has more than one valid lookup (attribution would fan out)</li>
+        <li>fct_claims.claim_id is unique</li>
+        <li>fct_claims has exactly one row per in-scope claim</li>
+        <li>fct_lookups.lookup_id is unique</li>
+        <li>fct_lookups has exactly one row per contract-valid lookup</li>
+        <li>fct_reversals.reversal_sk is unique</li>
+        <li>fct_reversals has exactly one row per contract-valid reversal</li>
+        <li class="inv-h">Reconciliation</li>
+        <li>every stream reconciles: source = curated + rejected</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="shape" aria-labelledby="shape-h">
+  <header>
+    <h2 id="shape-h">Why this shape</h2>
+  </header>
+  <div class="why">
+    <div class="prose">
+      <h3>Separate grains, not one wide table</h3>
+      <p>Lookups, claims and reversals happen at different grains and times. One wide claim table would drop unconverted
+        lookups or repeat a claim per reversal. Each fact keeps a true key; cross-grain questions aggregate each side to a
+        shared grain first, then join.</p>
+    </div>
+    <div class="prose">
+      <h3>Quarantine, not repair</h3>
+      <p>A repaired record is a guess that looks like data. <code>rejects</code> keeps every reason, the file and row, and the
+        original payload, so the producer can fix the source, and the reconciliation identity proves nothing vanished.
+        Copies of a claim id that disagree are all quarantined instead of picking a survivor; only the later copies of an exact
+        redelivery, which lose nothing when dropped, are rejected for being repeats.</p>
+    </div>
+    <div class="prose">
+      <h3>Effective dating</h3>
+      <p>Prices change and get corrected. The as-of join costs a claim with what was in effect when it was submitted,
+        restatements resolve to the latest publication, and <code>next_effective_date</code> gives the same answer as a
+        range join. The three dimensions are single current snapshots today; they are next in line for the same
+        treatment.</p>
+    </div>
+    <div class="prose">
+      <h3>Full reload and an atomic swap</h3>
+      <p>At this scale a rebuild is cheap and deterministic, needs no incremental state, and picks up reversals that arrive
+        weeks late for free. The build writes <code>.claims_warehouse.duckdb.building</code> and renames it into place only
+        when every check passes, so a failed build never destroys a good warehouse and a reader never sees a half-built one.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="site-foot">
+  <p>Source of truth: <code>sql/</code> and <code>claims_warehouse/</code>. If this page and the code ever disagree, the code
+    wins. All names, values and dates are synthetic.</p>
+</footer>
+</div>
+</body>
+</html>

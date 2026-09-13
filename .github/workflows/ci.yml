@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  warehouse:
+    name: lint, test, build (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      # third-party actions pinned to full commit SHAs
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install pinned dependencies
+        run: make setup PYTHON=python
+      - name: Lint
+        run: make lint
+      - name: Test
+        run: make test
+      # regenerates the synthetic sources, checks them byte-for-byte against the pinned
+      # manifest, rebuilds the warehouse from scratch and runs every example analysis
+      - name: Build from scratch and run the analyses
+        run: make analyses
+
+  demo-image:
+    name: Metabase demo image (linux/amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the image (verifies the linux/amd64 download checksums)
+        run: docker build --tag claims-analytics-metabase:ci demo/metabase
